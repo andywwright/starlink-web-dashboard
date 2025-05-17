@@ -1,2 +1,2 @@
-history_capacity = 50
+history_capacity = 300
 grpc_endpoint = "http://dishy.starlink.com:9200"

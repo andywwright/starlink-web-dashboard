@@ -133,8 +133,8 @@ async fn index() -> Html<&'static str> {
 <head><meta charset='utf-8'><title>Starlink Dashboard</title></head>
 <body>
   <h1>Starlink Dashboard</h1>
-  <img id='down' src='/initial/down' width='800' height='400' style='border:1px solid #666;'><br>
-  <img id='up' src='/initial/up' width='800' height='400' style='border:1px solid #666;'><br>
+  <img id='down' src='/initial/down' width='1200' height='300' style='border:1px solid #666;'><br>
+  <img id='up' src='/initial/up' width='1200' height='300' style='border:1px solid #666;'><br>
   <script>
     let ws = new WebSocket(`ws://${location.host}/ws`);
     ws.binaryType = "arraybuffer";
@@ -195,8 +195,8 @@ fn render_png<F>(
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>>
 where F: Fn(f64) -> f64,
 {
-    let width = 800u32;
-    let height = 400u32;
+    let width = 1200u32;
+    let height = 300u32;
     let mut raw = vec![0u8; (width * height * 3) as usize];
     {
         let backend = BitMapBackend::with_buffer(&mut raw, (width, height));
