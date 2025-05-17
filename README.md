@@ -1,4 +1,4 @@
-# Starlink Web Dashboard
+![screenshot](images/dash-0-1.png)
 
 ## Project Overview
 
@@ -38,10 +38,6 @@ Open your browser and navigate to:
 ```
 http://localhost:8080
 ```
-
-## Screenshot
-
-![screenshot](images/dash-0-1.png)
 
 ## Troubleshooting
 
