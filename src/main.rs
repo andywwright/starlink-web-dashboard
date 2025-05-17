@@ -8,7 +8,7 @@ use axum::{
 };
 use axum_server::bind;
 use chrono::{DateTime, Utc, TimeZone, Duration};
-use plotters::prelude::*;
+use plotters::{prelude::*, style::full_palette::GREEN_800};
 use serde::Deserialize;
 use tokio::{sync::{broadcast, Mutex}};
 use image::{DynamicImage, RgbImage, ImageFormat};
@@ -55,18 +55,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Pre-populate initial data for first load
     {
         let now = Utc::now();
-        // Fill initial history with zeros based on config history_capacity
-        {
-            let mut dh = down_history.lock().await;
-            for n in 0..history_capacity {
-                dh.push_back((now - Duration::seconds((history_capacity  - n) as i64), 0.0));
-            }
-        }
-        {
-            let mut uh = up_history.lock().await;
-            for n in 0..history_capacity {
-                uh.push_back((now - Duration::seconds((history_capacity  - n) as i64), 0.0));
-            }
+        let mut uh = up_history.lock().await;
+        let mut dh = down_history.lock().await;
+        for n in 0..history_capacity {
+            uh.push_back((now - Duration::seconds((history_capacity  - n) as i64), 0.0));
+            dh.push_back((now - Duration::seconds((history_capacity  - n) as i64), 0.0));
         }
     }
 
@@ -226,6 +219,7 @@ where F: Fn(f64) -> f64,
             .y_label_area_size(40)
             .build_cartesian_2d(x_min..x_max, y_min..y_max)?;
         chart.configure_mesh()
+            .max_light_lines(1)
             .x_desc("Time")
             .y_desc(y_desc)
             .x_labels(5)
@@ -242,7 +236,7 @@ where F: Fn(f64) -> f64,
         ;
         chart.draw_series(LineSeries::new(
             data.iter().map(|(t, v)| (t.timestamp_millis(), transform(*v))),
-            &RED,
+            &GREEN_800,
         ))?;
         root.present()?;
     }
