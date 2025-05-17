@@ -39,6 +39,10 @@ Open your browser and navigate to:
 http://localhost:8080
 ```
 
+## Screenshot
+
+![screenshot](images/dash-0-1.png)
+
 ## Troubleshooting
 
 - Ensure your Starlink hardware is powered and reachable on the local network.
