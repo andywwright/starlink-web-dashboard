@@ -187,7 +187,7 @@ async fn handle_ws(mut socket: WebSocket, tx: broadcast::Sender<ChartMessage>) {
             ChartMessage::Downlink(buf) => { data.push(0); data.extend(buf); }
             ChartMessage::Uplink(buf)   => { data.push(1); data.extend(buf); }
         }
-        if socket.send(Message::Binary(data)).await.is_err() {
+        if socket.send(Message::Binary(data.into())).await.is_err() {
             break;
         }
     }
