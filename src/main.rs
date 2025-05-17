@@ -125,6 +125,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_state(state);
 
     let addr: SocketAddr = "0.0.0.0:8080".parse().unwrap();
+    println!("Open your browser and navigate to http://localhost:8080");
     bind(addr).serve(app.into_make_service()).await?;
     Ok(())
 }

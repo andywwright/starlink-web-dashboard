@@ -23,13 +23,7 @@ git clone https://github.com/andywwright/starlink-web-dashboard.git
 cd starlink-web-dashboard
 ```
 
-### 2. Build the project
-
-```bash
-cargo build --release
-```
-
-### 3. Run the server
+### 2. Run the server
 
 ```bash
 cargo run
@@ -37,7 +31,7 @@ cargo run
 
 By default, the server runs on [http://localhost:8080](http://localhost:8080).
 
-### 4. Access the Dashboard
+### 3. Access the Dashboard
 
 Open your browser and navigate to:
 
