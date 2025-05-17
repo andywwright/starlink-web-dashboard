@@ -7,7 +7,7 @@ use axum::{
     Router,
 };
 use axum_server::bind;
-use chrono::{DateTime, Utc, TimeZone};
+use chrono::{DateTime, Utc, TimeZone, Duration};
 use plotters::prelude::*;
 use serde::Deserialize;
 use tokio::{sync::{broadcast, Mutex}};
@@ -50,13 +50,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let down_history = Arc::new(Mutex::new(ChartHistory::new()));
     let up_history = Arc::new(Mutex::new(ChartHistory::new()));
     let state = AppState { tx: tx.clone(), down_history: down_history.clone(), up_history: up_history.clone() };
+    let history_capacity = config.history_capacity;
 
     // Pre-populate initial data for first load
     {
         let now = Utc::now();
-        let initial = (now, 0.0);
-        down_history.lock().await.push_back(initial);
-        up_history.lock().await.push_back(initial);
+        // Fill initial history with zeros based on config history_capacity
+        {
+            let mut dh = down_history.lock().await;
+            for n in 0..history_capacity {
+                dh.push_back((now - Duration::seconds((history_capacity  - n) as i64), 0.0));
+            }
+        }
+        {
+            let mut uh = up_history.lock().await;
+            for n in 0..history_capacity {
+                uh.push_back((now - Duration::seconds((history_capacity  - n) as i64), 0.0));
+            }
+        }
     }
 
     // Spawn gRPC stream data generator
@@ -64,7 +75,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let down_history = down_history.clone();
         let up_history   = up_history.clone();
         let tx           = tx.clone();
-        let capacity     = config.history_capacity;
         let endpoint     = config.grpc_endpoint.clone();
 
         tokio::spawn(async move {
@@ -88,12 +98,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             {
                                 let mut hist = down_history.lock().await;
                                 hist.push_back((now, down_val));
-                                if hist.len() > capacity { hist.pop_front(); }
+                                if hist.len() > history_capacity { hist.pop_front(); }
                             }
                             {
                                 let mut hist = up_history.lock().await;
                                 hist.push_back((now, up_val));
-                                if hist.len() > capacity { hist.pop_front(); }
+                                if hist.len() > history_capacity { hist.pop_front(); }
                             }
 
                             // render and broadcast
@@ -132,9 +142,11 @@ async fn index() -> Html<&'static str> {
 <html>
 <head><meta charset='utf-8'><title>Starlink Dashboard</title></head>
 <body>
-  <h1>Starlink Dashboard</h1>
-  <img id='down' src='/initial/down' width='1200' height='300' style='border:1px solid #666;'><br>
-  <img id='up' src='/initial/up' width='1200' height='300' style='border:1px solid #666;'><br>
+  <center>
+    <h1>Starlink Dashboard</h1>
+    <img id='down' src='/initial/down' width='1200' height='300' style='border:1px solid #666;'><br>
+    <img id='up' src='/initial/up' width='1200' height='300' style='border:1px solid #666;'><br>
+  </center>
   <script>
     let ws = new WebSocket(`ws://${location.host}/ws`);
     ws.binaryType = "arraybuffer";
