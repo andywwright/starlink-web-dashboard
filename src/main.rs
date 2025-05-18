@@ -173,19 +173,33 @@ async fn index() -> Html<&'static str> {
     <img id='up' src='/initial/up' width='1200' height='300' style='border:1px solid #666;'><br>
     <img id='ping' src='/initial/ping' width='1200' height='300' style='border:1px solid #666;'><br>
   </center>
-  <script>
-    let ws = new WebSocket(`ws://${location.host}/ws`);
-    ws.binaryType = "arraybuffer";
-    ws.onopen = () => console.log("WS OPEN");
-    ws.onmessage = e => {
-      console.log("WS FRAME", e.data.byteLength);
+  
+<script>
+(function() {
+  let socket;
+  function connect() {
+    socket = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+    socket.binaryType = "arraybuffer";
+    socket.onopen = () => console.log("WS OPEN");
+    socket.onmessage = e => {
       let data = new Uint8Array(e.data);
       let type = data[0];
       let blob = new Blob([data.slice(1)], { type: "image/png" });
       document.getElementById(type===0?'down':type===1?'up':'ping').src = URL.createObjectURL(blob);
     };
-    ws.onclose = () => console.log("WS CLOSED");
-  </script>
+    socket.onclose = () => {
+      console.log("WS CLOSED — reconnecting in 1s");
+      setTimeout(connect, 1000);
+    };
+    socket.onerror = err => {
+      console.error("WS ERROR", err);
+      socket.close();
+    };
+  }
+  connect();
+})();
+</script>
+
 </body>
 </html>"#)
 }
