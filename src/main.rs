@@ -1,20 +1,23 @@
-use std::{collections::VecDeque, fs, sync::Arc,  net::SocketAddr, io::Cursor};
 use anyhow::Result;
 use axum::{
-    extract::{State, ws::{Message, WebSocket, WebSocketUpgrade}},
+    extract::{
+        ws::{Message, WebSocket, WebSocketUpgrade},
+        State,
+    },
     response::{Html, IntoResponse},
     routing::get,
     Router,
 };
 use axum_server::bind;
-use chrono::{DateTime, Utc, TimeZone, Duration};
+use chrono::{DateTime, Duration, TimeZone, Utc};
+use futures::StreamExt;
+use image::{DynamicImage, ImageFormat, RgbImage};
 use plotters::{prelude::*, style::full_palette::GREEN_800};
 use serde::Deserialize;
-use tokio::{sync::{broadcast, Mutex}};
-use image::{DynamicImage, RgbImage, ImageFormat};
 use starlink_grpc_client::client::DishClient;
 use starlink_grpc_client::space_x::api::device::response::Response as ResponseOneof;
-use futures::StreamExt;
+use std::{collections::VecDeque, fs, io::Cursor, net::SocketAddr, sync::Arc};
+use tokio::sync::{broadcast, Mutex};
 
 // Type aliases to reduce complexity
 type DataPoint = (DateTime<Utc>, f64);
@@ -52,7 +55,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let down_history = Arc::new(Mutex::new(ChartHistory::new()));
     let ping_history = Arc::new(Mutex::new(ChartHistory::new()));
     let up_history = Arc::new(Mutex::new(ChartHistory::new()));
-    let state = AppState { tx: tx.clone(), down_history: down_history.clone(), up_history: up_history.clone(), ping_history: ping_history.clone() };
+    let state = AppState {
+        tx: tx.clone(),
+        down_history: down_history.clone(),
+        up_history: up_history.clone(),
+        ping_history: ping_history.clone(),
+    };
     let history_capacity = config.history_capacity;
 
     // Pre-populate initial data for first load
@@ -62,18 +70,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut dh = down_history.lock().await;
         let mut ph = ping_history.lock().await;
         for n in 0..history_capacity {
-            uh.push_back((now - Duration::seconds((history_capacity  - n) as i64), 0.0));
-            dh.push_back((now - Duration::seconds((history_capacity  - n) as i64), 0.0));
-            ph.push_back((now - Duration::seconds((history_capacity  - n) as i64), 25.0));
+            uh.push_back((now - Duration::seconds((history_capacity - n) as i64), 0.0));
+            dh.push_back((now - Duration::seconds((history_capacity - n) as i64), 0.0));
+            ph.push_back((now - Duration::seconds((history_capacity - n) as i64), 25.0));
         }
     }
 
     // Spawn gRPC stream data generator
     {
         let down_history = down_history.clone();
-        let up_history   = up_history.clone();
-        let tx           = tx.clone();
-        let endpoint     = config.grpc_endpoint.clone();
+        let up_history = up_history.clone();
+        let tx = tx.clone();
+        let endpoint = config.grpc_endpoint.clone();
 
         tokio::spawn(async move {
             loop {
@@ -89,41 +97,63 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     // eprintln!("Waiting for the next message {}", Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
                                     match item {
                                         Ok(status) => {
-                                            if let Some(ResponseOneof::DishGetStatus(dgs)) = status.raw.response {
-                                            let down_val = dgs.downlink_throughput_bps as f64 / 1_000_000.0;
-                                            let up_val = dgs.uplink_throughput_bps as f64 / 1_000_000.0;
-                                            let now      = Utc::now();
-                                            // eprintln!("Received message: UP: {up_val:.2}, DOWN: {down_val:.2}");
-                                            // update histories
+                                            if let Some(ResponseOneof::DishGetStatus(dgs)) =
+                                                status.raw.response
                                             {
-                                            let mut hist = down_history.lock().await;
-                                            hist.push_back((now, down_val));
-                                            if hist.len() > history_capacity { hist.pop_front(); }
-                                            }
-                                            {
-                                            let mut hist = up_history.lock().await;
-                                            hist.push_back((now, up_val));
-                                            let ping_val = dgs.pop_ping_latency_ms as f64;
-                                            let mut phist = ping_history.lock().await;
-                                            phist.push_back((now, ping_val));
-                                            if phist.len() > history_capacity { phist.pop_front(); }
-                                            if hist.len() > history_capacity { hist.pop_front(); }
-                                            }
-                                            
-                                            // render and broadcast
-                                            let dh_vec = down_history.lock().await.clone();
-                                            let uh_vec = up_history.lock().await.clone();
-                                            let ph_vec = ping_history.lock().await.clone();
-                                            
-                                            if let Ok(buf) = render_png("Downlink Throughput", &dh_vec, |v| v, "Mbps") {
-                                            let _ = tx.send(ChartMessage::Downlink(buf));
-                                            }
-                                            if let Ok(buf) = render_png("Uplink Throughput", &uh_vec, |v| v, "Mbps") {
-                                            let _ = tx.send(ChartMessage::Uplink(buf));
-                                            }
-                                            if let Ok(buf) = render_png("Ping Latency", &ph_vec, |v| v, "ms") {
-                                            let _ = tx.send(ChartMessage::Ping(buf));
-                                            }
+                                                let down_val = dgs.downlink_throughput_bps as f64
+                                                    / 1_000_000.0;
+                                                let up_val =
+                                                    dgs.uplink_throughput_bps as f64 / 1_000_000.0;
+                                                let now = Utc::now();
+                                                // eprintln!("Received message: UP: {up_val:.2}, DOWN: {down_val:.2}");
+                                                // update histories
+                                                {
+                                                    let mut hist = down_history.lock().await;
+                                                    hist.push_back((now, down_val));
+                                                    if hist.len() > history_capacity {
+                                                        hist.pop_front();
+                                                    }
+                                                }
+                                                {
+                                                    let mut hist = up_history.lock().await;
+                                                    hist.push_back((now, up_val));
+                                                    let ping_val = dgs.pop_ping_latency_ms as f64;
+                                                    let mut phist = ping_history.lock().await;
+                                                    phist.push_back((now, ping_val));
+                                                    if phist.len() > history_capacity {
+                                                        phist.pop_front();
+                                                    }
+                                                    if hist.len() > history_capacity {
+                                                        hist.pop_front();
+                                                    }
+                                                }
+
+                                                // render and broadcast
+                                                let dh_vec = down_history.lock().await.clone();
+                                                let uh_vec = up_history.lock().await.clone();
+                                                let ph_vec = ping_history.lock().await.clone();
+
+                                                if let Ok(buf) = render_png(
+                                                    "Downlink Throughput",
+                                                    &dh_vec,
+                                                    |v| v,
+                                                    "Mbps",
+                                                ) {
+                                                    let _ = tx.send(ChartMessage::Downlink(buf));
+                                                }
+                                                if let Ok(buf) = render_png(
+                                                    "Uplink Throughput",
+                                                    &uh_vec,
+                                                    |v| v,
+                                                    "Mbps",
+                                                ) {
+                                                    let _ = tx.send(ChartMessage::Uplink(buf));
+                                                }
+                                                if let Ok(buf) =
+                                                    render_png("Ping Latency", &ph_vec, |v| v, "ms")
+                                                {
+                                                    let _ = tx.send(ChartMessage::Ping(buf));
+                                                }
                                             }
                                         }
                                         Err(err) => {
@@ -162,37 +192,52 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn index() -> Html<&'static str> {
-    Html(r#"
-<!DOCTYPE html>
+    Html(
+        r#"<!DOCTYPE html>
 <html>
 <head><meta charset='utf-8'><title>Starlink Dashboard</title></head>
 <body>
   <center>
     <h1>Starlink Dashboard</h1>
+    <div style="text-align:center; margin: 10px;">
+      <span id="ws-status" style="display:inline-block;width:15px;height:15px;border-radius:50%;background:red;margin-right:8px;"></span>
+      <span id="ws-status-text">Disconnected</span>
+    </div>
     <img id='down' src='/initial/down' width='1200' height='300' style='border:1px solid #666;'><br>
     <img id='up' src='/initial/up' width='1200' height='300' style='border:1px solid #666;'><br>
     <img id='ping' src='/initial/ping' width='1200' height='300' style='border:1px solid #666;'><br>
   </center>
-  
+
 <script>
 (function() {
+  function setStatus(color, text) {
+    const el = document.getElementById('ws-status');
+    const txt = document.getElementById('ws-status-text');
+    if (el) el.style.backgroundColor = color;
+    if (txt) txt.textContent = text;
+  }
   let socket;
   function connect() {
-    socket = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
-    socket.binaryType = "arraybuffer";
-    socket.onopen = () => console.log("WS OPEN");
+    setStatus('yellow', 'Reconnecting');
+    socket = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+    socket.binaryType = 'arraybuffer';
+    socket.onopen = () => {
+      console.log('WS OPEN');
+      setStatus('green', 'Connected');
+    };
     socket.onmessage = e => {
       let data = new Uint8Array(e.data);
       let type = data[0];
-      let blob = new Blob([data.slice(1)], { type: "image/png" });
+      let blob = new Blob([data.slice(1)], { type: 'image/png' });
       document.getElementById(type===0?'down':type===1?'up':'ping').src = URL.createObjectURL(blob);
     };
     socket.onclose = () => {
-      console.log("WS CLOSED — reconnecting in 1s");
+      console.log('WS CLOSED — reconnecting in 1s');
+      setStatus('red', 'Disconnected');
       setTimeout(connect, 1000);
     };
     socket.onerror = err => {
-      console.error("WS ERROR", err);
+      console.error('WS ERROR', err);
       socket.close();
     };
   }
@@ -201,7 +246,8 @@ async fn index() -> Html<&'static str> {
 </script>
 
 </body>
-</html>"#)
+</html>"#,
+    )
 }
 
 async fn initial_down(State(state): State<AppState>) -> impl IntoResponse {
@@ -239,9 +285,18 @@ async fn handle_ws(mut socket: WebSocket, tx: broadcast::Sender<ChartMessage>) {
     while let Ok(msg) = rx.recv().await {
         let mut data = Vec::new();
         match msg {
-            ChartMessage::Downlink(buf) => { data.push(0); data.extend(buf); }
-            ChartMessage::Uplink(buf)   => { data.push(1); data.extend(buf); }
-            ChartMessage::Ping(buf)     => { data.push(2); data.extend(buf); }
+            ChartMessage::Downlink(buf) => {
+                data.push(0);
+                data.extend(buf);
+            }
+            ChartMessage::Uplink(buf) => {
+                data.push(1);
+                data.extend(buf);
+            }
+            ChartMessage::Ping(buf) => {
+                data.push(2);
+                data.extend(buf);
+            }
         }
         if socket.send(Message::Binary(data.into())).await.is_err() {
             break;
@@ -255,7 +310,8 @@ fn render_png<F>(
     transform: F,
     y_desc: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>>
-where F: Fn(f64) -> f64,
+where
+    F: Fn(f64) -> f64,
 {
     let width = 1200u32;
     let height = 300u32;
@@ -268,14 +324,19 @@ where F: Fn(f64) -> f64,
         let x_max = data.back().map(|(t, _)| t.timestamp_millis()).unwrap_or(0);
         let ys: Vec<f64> = data.iter().map(|(_, v)| transform(*v)).collect();
         let y_min = ys.iter().cloned().fold(f64::INFINITY, f64::min);
-        let y_max = ys.iter().cloned().fold(f64::NEG_INFINITY, f64::max).max(0.0);
+        let y_max = ys
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max)
+            .max(0.0);
         let mut chart = ChartBuilder::on(&root)
             .caption(title, ("sans-serif", 20).into_font())
             .margin(10)
             .x_label_area_size(30)
             .y_label_area_size(40)
             .build_cartesian_2d(x_min..x_max, y_min..y_max)?;
-        chart.configure_mesh()
+        chart
+            .configure_mesh()
             .max_light_lines(1)
             .x_desc("Time")
             .y_desc(y_desc)
@@ -286,13 +347,16 @@ where F: Fn(f64) -> f64,
                 let secs = timestamp / 1000;
                 let nsecs = ((timestamp % 1000) * 1_000_000) as u32;
                 // Convert to DateTime<Utc>
-                let dt = Utc.timestamp_opt(secs, nsecs).single().unwrap_or_else(|| Utc.timestamp_opt(0, 0).single().unwrap());
-            dt.format("%H:%M:%S").to_string()
+                let dt = Utc
+                    .timestamp_opt(secs, nsecs)
+                    .single()
+                    .unwrap_or_else(|| Utc.timestamp_opt(0, 0).single().unwrap());
+                dt.format("%H:%M:%S").to_string()
             })
-            .draw()?
-        ;
+            .draw()?;
         chart.draw_series(LineSeries::new(
-            data.iter().map(|(t, v)| (t.timestamp_millis(), transform(*v))),
+            data.iter()
+                .map(|(t, v)| (t.timestamp_millis(), transform(*v))),
             &GREEN_800,
         ))?;
         root.present()?;
