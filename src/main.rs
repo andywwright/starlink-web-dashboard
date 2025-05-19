@@ -23,6 +23,8 @@ use tokio::sync::{broadcast, Mutex};
 type DataPoint = (DateTime<Utc>, f64);
 type ChartHistory = VecDeque<DataPoint>;
 
+const INDEX_HTML: &str = include_str!("../static/index.html");
+
 #[derive(Clone)]
 struct AppState {
     tx: broadcast::Sender<ChartMessage>,
@@ -192,62 +194,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn index() -> Html<&'static str> {
-    Html(
-        r#"<!DOCTYPE html>
-<html>
-<head><meta charset='utf-8'><title>Starlink Dashboard</title></head>
-<body>
-  <center>
-    <h1>Starlink Dashboard</h1>
-    <div style="text-align:center; margin: 10px;">
-      <span id="ws-status" style="display:inline-block;width:15px;height:15px;border-radius:50%;background:red;margin-right:8px;"></span>
-      <span id="ws-status-text">Disconnected</span>
-    </div>
-    <img id='down' src='/initial/down' width='1200' height='300' style='border:1px solid #666;'><br>
-    <img id='up' src='/initial/up' width='1200' height='300' style='border:1px solid #666;'><br>
-    <img id='ping' src='/initial/ping' width='1200' height='300' style='border:1px solid #666;'><br>
-  </center>
-
-<script>
-(function() {
-  function setStatus(color, text) {
-    const el = document.getElementById('ws-status');
-    const txt = document.getElementById('ws-status-text');
-    if (el) el.style.backgroundColor = color;
-    if (txt) txt.textContent = text;
-  }
-  let socket;
-  function connect() {
-    setStatus('yellow', 'Reconnecting');
-    socket = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
-    socket.binaryType = 'arraybuffer';
-    socket.onopen = () => {
-      console.log('WS OPEN');
-      setStatus('green', 'Connected');
-    };
-    socket.onmessage = e => {
-      let data = new Uint8Array(e.data);
-      let type = data[0];
-      let blob = new Blob([data.slice(1)], { type: 'image/png' });
-      document.getElementById(type===0?'down':type===1?'up':'ping').src = URL.createObjectURL(blob);
-    };
-    socket.onclose = () => {
-      console.log('WS CLOSED — reconnecting in 1s');
-      setStatus('red', 'Disconnected');
-      setTimeout(connect, 1000);
-    };
-    socket.onerror = err => {
-      console.error('WS ERROR', err);
-      socket.close();
-    };
-  }
-  connect();
-})();
-</script>
-
-</body>
-</html>"#,
-    )
+    Html(INDEX_HTML)
 }
 
 async fn initial_down(State(state): State<AppState>) -> impl IntoResponse {
