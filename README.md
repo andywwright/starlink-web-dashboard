@@ -7,7 +7,7 @@ This project provides a simple web dashboard for real-time monitoring of your St
 It builds on [`starlink-grpc-client`](https://github.com/andywwright/starlink-grpc-client) and runs as a local web server showing live metrics including:
 
 - Download and upload speeds
-- Ping delay
+- Ping latency
 
 ## Features
 
