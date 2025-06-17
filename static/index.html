@@ -35,7 +35,16 @@
       let data = new Uint8Array(e.data);
       let type = data[0];
       let blob = new Blob([data.slice(1)], { type: 'image/png' });
-      document.getElementById(type===0?'down':type===1?'up':'ping').src = URL.createObjectURL(blob);
+      const id = type===0?'down':type===1?'up':'ping';
+      const img = document.getElementById(id);
+      if (img) {
+        if (img.dataset.url) {
+          URL.revokeObjectURL(img.dataset.url);
+        }
+        const url = URL.createObjectURL(blob);
+        img.src = url;
+        img.dataset.url = url;
+      }
     };
     socket.onclose = () => {
       console.log('WS CLOSED — reconnecting in 1s');
